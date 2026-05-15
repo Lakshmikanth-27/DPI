@@ -11,6 +11,7 @@
                 "-O2",
                 "-Wall",
                 "-Wextra",
+                "-static",
                 "-I", "include",
                 "-o", "dpi_engine.exe",
                 "src/dpi_mt.cpp",
