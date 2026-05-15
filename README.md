@@ -906,7 +906,7 @@ g++ -std=c++17 -pthread -O2 -I include -o dpi_engine \
 
 **Configure threads (multi-threaded only):**
 ```bash
-./dpi_engine input.pcap output.pcap --lbs 4 --fps 4
+.\dpi_engine.exe input.pcap output.pcap --lbs 4 --fps 4
 # Creates 4 LB threads × 4 FP threads = 16 processing threads
 ```
 
