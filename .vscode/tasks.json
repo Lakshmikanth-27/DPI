@@ -1,0 +1,48 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build DPI Engine",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-std=c++17",
+                "-pthread",
+                "-O2",
+                "-I", "include",
+                "-o", "dpi_engine.exe",
+                "src/dpi_mt.cpp",
+                "src/pcap_reader.cpp",
+                "src/packet_parser.cpp",
+                "src/sni_extractor.cpp",
+                "src/types.cpp"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Run DPI Engine",
+            "type": "shell",
+            "command": ".\\dpi_engine.exe",
+            "args": [
+                "test_dpi.pcap",
+                "output.pcap"
+            ],
+            "dependsOn": "Build DPI Engine",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "focus": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}
