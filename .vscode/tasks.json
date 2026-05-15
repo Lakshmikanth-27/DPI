@@ -17,6 +17,11 @@
                 "src/sni_extractor.cpp",
                 "src/types.cpp"
             ],
+            "options": {
+                "env": {
+                    "Path": "C:\\msys64\\ucrt64\\bin;${env:Path}"
+                }
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
