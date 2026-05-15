@@ -362,13 +362,13 @@ public:
         int total_fps = cfg.num_lbs * cfg.fps_per_lb;
         
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-        std::cout << "║              DPI ENGINE v2.0 (Multi-threaded)                 ║\n";
-        std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-        std::cout << "║ Load Balancers: " << std::setw(2) << cfg.num_lbs 
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "|              DPI ENGINE v2.0 (Multi-threaded)                  |\n";
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "| Load Balancers: " << std::setw(2) << cfg.num_lbs
                   << "    FPs per LB: " << std::setw(2) << cfg.fps_per_lb
-                  << "    Total FPs: " << std::setw(2) << total_fps << "     ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════════╝\n\n";
+                  << "    Total FPs: " << std::setw(2) << total_fps << "      |\n";
+        std::cout << "+----------------------------------------------------------------+\n\n";
         
         // Create FP threads
         for (int i = 0; i < total_fps; i++) {
@@ -527,52 +527,52 @@ private:
     
     void printReport() {
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-        std::cout << "║                      PROCESSING REPORT                        ║\n";
-        std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-        std::cout << "║ Total Packets:      " << std::setw(12) << stats_.total_packets.load() << "                           ║\n";
-        std::cout << "║ Total Bytes:        " << std::setw(12) << stats_.total_bytes.load() << "                           ║\n";
-        std::cout << "║ TCP Packets:        " << std::setw(12) << stats_.tcp_packets.load() << "                           ║\n";
-        std::cout << "║ UDP Packets:        " << std::setw(12) << stats_.udp_packets.load() << "                           ║\n";
-        std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-        std::cout << "║ Forwarded:          " << std::setw(12) << stats_.forwarded.load() << "                           ║\n";
-        std::cout << "║ Dropped:            " << std::setw(12) << stats_.dropped.load() << "                           ║\n";
-        
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "|                      PROCESSING REPORT                        |\n";
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "| Total Packets:      " << std::setw(12) << stats_.total_packets.load() << "                           |\n";
+        std::cout << "| Total Bytes:        " << std::setw(12) << stats_.total_bytes.load() << "                           |\n";
+        std::cout << "| TCP Packets:        " << std::setw(12) << stats_.tcp_packets.load() << "                           |\n";
+        std::cout << "| UDP Packets:        " << std::setw(12) << stats_.udp_packets.load() << "                           |\n";
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "| Forwarded:          " << std::setw(12) << stats_.forwarded.load() << "                           |\n";
+        std::cout << "| Dropped:            " << std::setw(12) << stats_.dropped.load() << "                           |\n";
+
         // Thread stats
-        std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-        std::cout << "║ THREAD STATISTICS                                             ║\n";
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "| THREAD STATISTICS                                              |\n";
         for (size_t i = 0; i < lbs_.size(); i++) {
-            std::cout << "║   LB" << i << " dispatched:   " << std::setw(12) << lbs_[i]->dispatched() << "                           ║\n";
+            std::cout << "|   LB" << i << " dispatched:   " << std::setw(12) << lbs_[i]->dispatched() << "                           |\n";
         }
         for (size_t i = 0; i < fps_.size(); i++) {
-            std::cout << "║   FP" << i << " processed:    " << std::setw(12) << fps_[i]->processed() << "                           ║\n";
+            std::cout << "|   FP" << i << " processed:    " << std::setw(12) << fps_[i]->processed() << "                           |\n";
         }
-        
+
         // App distribution
-        std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-        std::cout << "║                   APPLICATION BREAKDOWN                       ║\n";
-        std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-        
+        std::cout << "+----------------------------------------------------------------+\n";
+        std::cout << "|                   APPLICATION BREAKDOWN                        |\n";
+        std::cout << "+----------------------------------------------------------------+\n";
+
         std::lock_guard<std::mutex> lock(stats_.app_mutex);
-        
+
         std::vector<std::pair<AppType, uint64_t>> sorted_apps(
             stats_.app_counts.begin(), stats_.app_counts.end());
         std::sort(sorted_apps.begin(), sorted_apps.end(),
                   [](const auto& a, const auto& b) { return a.second > b.second; });
-        
+
         uint64_t total = stats_.total_packets.load();
         for (const auto& [app, count] : sorted_apps) {
             double pct = total > 0 ? (100.0 * count / total) : 0;
             int bar = static_cast<int>(pct / 5);
             std::string bar_str(bar, '#');
-            
-            std::cout << "║ " << std::setw(15) << std::left << appTypeToString(app)
+
+            std::cout << "| " << std::setw(15) << std::left << appTypeToString(app)
                       << std::setw(8) << std::right << count
                       << " " << std::setw(5) << std::fixed << std::setprecision(1) << pct << "% "
-                      << std::setw(20) << std::left << bar_str << "  ║\n";
+                      << std::setw(20) << std::left << bar_str << "  |\n";
         }
-        
-        std::cout << "╚══════════════════════════════════════════════════════════════╝\n";
+
+        std::cout << "+----------------------------------------------------------------+\n";
         
         // Detected SNIs
         if (!stats_.detected_snis.empty()) {
