@@ -9,6 +9,8 @@
                 "-std=c++17",
                 "-pthread",
                 "-O2",
+                "-Wall",
+                "-Wextra",
                 "-I", "include",
                 "-o", "dpi_engine.exe",
                 "src/dpi_mt.cpp",
@@ -41,7 +43,7 @@
                 "output.pcap"
             ],
             "dependsOn": "Build DPI Engine",
-            "group": "test",
+            "group": "none",
             "presentation": {
                 "reveal": "always",
                 "panel": "shared",
