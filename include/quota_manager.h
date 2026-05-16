@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <cstdint>
 
 class QuotaManager {
@@ -41,7 +42,7 @@ private:
     mutable std::mutex mutex_;
     std::unordered_map<std::string, uint64_t> limits_;  // app -> limit bytes
     std::unordered_map<std::string, uint64_t> usage_;   // app -> bytes used today
-    bool has_quotas_ = false;
+    std::atomic<bool> has_quotas_{false};
 
     static std::string todayString();                         // "YYYY-MM-DD"
     static uint64_t safeUint64(const std::string& s, size_t pos); // parse without throw

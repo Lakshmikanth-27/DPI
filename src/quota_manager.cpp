@@ -11,9 +11,10 @@
 
 std::string QuotaManager::todayString() {
     std::time_t t = std::time(nullptr);
-    std::tm* tm_info = std::localtime(&t);
+    std::tm tm_info{};
+    localtime_s(&tm_info, &t);
     char buf[11];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d", tm_info);
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_info);
     return std::string(buf);
 }
 
@@ -120,8 +121,11 @@ void QuotaManager::loadState(const std::string& state_file) {
     size_t ubk = json.find("\"usage_bytes\"");
     if (ubk == std::string::npos) return;
     size_t os = json.find('{', ubk);
-    size_t oe = json.find('}', os);
-    if (os == std::string::npos || oe == std::string::npos) return;
+    size_t oe = json.rfind('}');
+    if (os == std::string::npos || oe == std::string::npos || oe <= os) return;
+    // find the closing brace of usage_bytes object (second-to-last '}' in file)
+    oe = json.rfind('}', oe - 1);
+    if (oe == std::string::npos || oe <= os) return;
 
     std::string obj = json.substr(os + 1, oe - os - 1);
 
