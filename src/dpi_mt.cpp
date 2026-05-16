@@ -21,6 +21,7 @@
 #include "packet_parser.h"
 #include "sni_extractor.h"
 #include "types.h"
+#include "quota_manager.h"
 
 using namespace PacketAnalyzer;
 using namespace DPI;
@@ -190,8 +191,8 @@ struct Stats {
 // =============================================================================
 class FastPath {
 public:
-    FastPath(int id, Rules* rules, Stats* stats, TSQueue<Packet>* output_queue)
-        : id_(id), rules_(rules), stats_(stats), output_queue_(output_queue) {}
+    FastPath(int id, Rules* rules, Stats* stats, TSQueue<Packet>* output_queue, QuotaManager* quota)
+        : id_(id), rules_(rules), stats_(stats), output_queue_(output_queue), quota_(quota) {}
     
     void start() {
         running_ = true;
@@ -213,6 +214,7 @@ private:
     Rules* rules_;
     Stats* stats_;
     TSQueue<Packet>* output_queue_;
+    QuotaManager* quota_;
     TSQueue<Packet> input_queue_;
     std::unordered_map<FiveTuple, FlowEntry, FiveTupleHash> flows_;
     
@@ -245,7 +247,13 @@ private:
             if (!flow.blocked) {
                 flow.blocked = rules_->isBlocked(pkt.tuple.src_ip, flow.app_type, flow.sni);
             }
-            
+
+            // Check quota — only for classified flows with a known app
+            if (!flow.blocked && quota_ && quota_->hasQuotas() && flow.classified) {
+                flow.blocked = quota_->recordAndCheck(
+                    appTypeToString(flow.app_type), pkt.data.size());
+            }
+
             // Record stats
             stats_->recordApp(flow.app_type, flow.sni);
             
@@ -356,6 +364,7 @@ public:
     struct Config {
         int num_lbs = 2;
         int fps_per_lb = 2;
+        std::string quota_rules_file;  // empty = quota feature disabled
     };
     
     DPIEngine(const Config& cfg) : config_(cfg) {
@@ -372,7 +381,7 @@ public:
         
         // Create FP threads
         for (int i = 0; i < total_fps; i++) {
-            fps_.push_back(std::make_unique<FastPath>(i, &rules_, &stats_, &output_queue_));
+            fps_.push_back(std::make_unique<FastPath>(i, &rules_, &stats_, &output_queue_, &quota_manager_));
         }
         
         // Create LB threads, each managing a subset of FPs
@@ -394,7 +403,14 @@ public:
         // Open input
         PcapReader reader;
         if (!reader.open(input_file)) return false;
-        
+
+        // Load quota rules and state (if configured)
+        if (!config_.quota_rules_file.empty()) {
+            if (quota_manager_.loadRules(config_.quota_rules_file)) {
+                quota_manager_.loadState(stateFilePath(config_.quota_rules_file));
+            }
+        }
+
         // Open output
         std::ofstream output(output_file, std::ios::binary);
         if (!output.is_open()) {
@@ -513,7 +529,12 @@ public:
         
         // Print report
         printReport();
-        
+
+        // Save quota state for next run
+        if (!config_.quota_rules_file.empty() && quota_manager_.hasQuotas()) {
+            quota_manager_.saveState(stateFilePath(config_.quota_rules_file));
+        }
+
         return true;
     }
 
@@ -521,9 +542,17 @@ private:
     Config config_;
     Rules rules_;
     Stats stats_;
+    QuotaManager quota_manager_;
     TSQueue<Packet> output_queue_;
     std::vector<std::unique_ptr<FastPath>> fps_;
     std::vector<std::unique_ptr<LoadBalancer>> lbs_;
+
+    static std::string stateFilePath(const std::string& rules_file) {
+        size_t sep = rules_file.find_last_of("/\\");
+        if (sep != std::string::npos)
+            return rules_file.substr(0, sep + 1) + "quota_state.json";
+        return "quota_state.json";
+    }
     
     void printReport() {
         std::cout << "\n";
@@ -581,6 +610,23 @@ private:
                 std::cout << "  - " << sni << " -> " << appTypeToString(app) << "\n";
             }
         }
+
+        // Quota report
+        if (quota_manager_.hasQuotas()) {
+            std::cout << "\n+----------------------------------------------------------------+\n";
+            std::cout << "|                     BANDWIDTH QUOTAS                          |\n";
+            std::cout << "+----------------------------------------------------------------+\n";
+            for (const auto& row : quota_manager_.getReport()) {
+                double used_mb  = row.used_bytes  / (1024.0 * 1024.0);
+                double limit_mb = row.limit_bytes / (1024.0 * 1024.0);
+                std::string status = row.exceeded ? "[EXCEEDED]" : "[ OK     ]";
+                std::cout << "| " << std::setw(15) << std::left  << row.app
+                          << std::setw(7)  << std::right << std::fixed << std::setprecision(1) << limit_mb << " MB limit"
+                          << std::setw(8)  << used_mb << " MB used"
+                          << "  " << status << " |\n";
+            }
+            std::cout << "+----------------------------------------------------------------+\n";
+        }
     }
 };
 
@@ -625,6 +671,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--block-domain" && i + 1 < argc) block_domains.push_back(argv[++i]);
         else if (arg == "--lbs" && i + 1 < argc) cfg.num_lbs = std::stoi(argv[++i]);
         else if (arg == "--fps" && i + 1 < argc) cfg.fps_per_lb = std::stoi(argv[++i]);
+        else if (arg == "--quota-rules" && i + 1 < argc) cfg.quota_rules_file = argv[++i];
     }
     
     DPIEngine engine(cfg);
