@@ -18,6 +18,8 @@ This document explains **everything** about this project - from basic networking
 9. [How Blocking Works](#9-how-blocking-works)
 10. [Building and Running](#10-building-and-running)
 11. [Understanding the Output](#11-understanding-the-output)
+12. [Bandwidth Quotas](#12-bandwidth-quotas)
+13. [Extending the Project](#13-extending-the-project)
 
 ---
 
@@ -872,24 +874,29 @@ Connection to YouTube:
 
 ### Build Commands
 
-**Simple Version:**
-```bash
-g++ -std=c++17 -O2 -I include -o dpi_simple \
-    src/main_working.cpp \
-    src/pcap_reader.cpp \
-    src/packet_parser.cpp \
-    src/sni_extractor.cpp \
-    src/types.cpp
+**Windows (PowerShell — MinGW/MSYS2 UCRT64):**
+```powershell
+$env:Path = "C:\msys64\ucrt64\bin;" + $env:Path
+g++ -std=c++17 -pthread -O2 -Wall -Wextra -static -I include -o dpi_engine.exe `
+    src/dpi_mt.cpp `
+    src/pcap_reader.cpp `
+    src/packet_parser.cpp `
+    src/sni_extractor.cpp `
+    src/types.cpp `
+    src/quota_manager.cpp
 ```
 
-**Multi-threaded Version:**
+Or press `Ctrl+Shift+B` in VSCode — the Build task is already configured in `.vscode/tasks.json`.
+
+**macOS/Linux:**
 ```bash
 g++ -std=c++17 -pthread -O2 -I include -o dpi_engine \
     src/dpi_mt.cpp \
     src/pcap_reader.cpp \
     src/packet_parser.cpp \
     src/sni_extractor.cpp \
-    src/types.cpp
+    src/types.cpp \
+    src/quota_manager.cpp
 ```
 
 ### Running
@@ -988,7 +995,181 @@ python3 generate_test_pcap.py
 
 ---
 
-## 12. Extending the Project
+## 12. Bandwidth Quotas
+
+The engine supports **persistent daily bandwidth quotas** — track how many bytes each app uses per day and automatically block it when it exceeds the limit. Usage survives across multiple runs and resets at midnight.
+
+### How It Works
+
+```
+quota_rules.json          quota_state.json
+(you edit this)           (engine writes this)
+       |                         |
+       +----------+  +-----------+
+                  |  |
+            [ QuotaManager ]
+                  |
+           DPIEngine / FastPath
+                  |
+    recordAndCheck(app, bytes) -> block if exceeded
+```
+
+- **`quota_rules.json`** — define per-app daily limits (megabytes)
+- **`quota_state.json`** — machine-written, tracks bytes used today; auto-resets at midnight
+
+### File Formats
+
+**`quota_rules.json`** — edit this file to configure limits:
+```json
+{
+  "quotas": [
+    { "app": "YouTube",  "limit_mb": 500 },
+    { "app": "TikTok",   "limit_mb": 100 },
+    { "app": "Facebook", "limit_mb": 200 }
+  ]
+}
+```
+
+Supported app names: `YouTube`, `TikTok`, `Facebook`, `Instagram`, `Netflix`, `Discord`, `Spotify`, `Zoom`, `Google`, `Amazon`, `GitHub`, `Telegram`, `Cloudflare`, `Twitter/X`, `Apple`
+
+**`quota_state.json`** — written automatically after each run:
+```json
+{
+  "date": "2026-05-16",
+  "usage_bytes": {
+    "YouTube":  52428800,
+    "TikTok":   1048576,
+    "Facebook": 0
+  }
+}
+```
+
+### CLI Usage
+
+```powershell
+# Enable quota feature by passing the rules file
+.\dpi_engine.exe input.pcap output.pcap --quota-rules quota_rules.json
+
+# Combine with blocking rules
+.\dpi_engine.exe input.pcap output.pcap --quota-rules quota_rules.json --block-app Discord
+```
+
+Omitting `--quota-rules` disables quotas entirely — no behavior change.
+
+### Quota Report in Output
+
+When quotas are active, a section is appended to the Processing Report:
+
+```
++----------------------------------------------------------------+
+|                     BANDWIDTH QUOTAS                          |
++----------------------------------------------------------------+
+| Facebook         200.0 MB limit     0.0 MB used  [ OK     ] |
+| TikTok           100.0 MB limit     0.0 MB used  [ OK     ] |
+| YouTube          500.0 MB limit   500.0 MB used  [EXCEEDED] |
++----------------------------------------------------------------+
+```
+
+---
+
+### Testing the Bandwidth Quotas Feature
+
+#### Test 1 — Baseline (quotas disabled)
+
+```powershell
+.\dpi_engine.exe test_dpi.pcap output.pcap
+```
+
+**Expected:** Normal report with no `BANDWIDTH QUOTAS` section.
+
+---
+
+#### Test 2 — Quotas enabled, limits not exceeded
+
+```powershell
+.\dpi_engine.exe test_dpi.pcap output.pcap --quota-rules quota_rules.json
+```
+
+**Expected:**
+- `BANDWIDTH QUOTAS` section appears with all apps showing `[ OK ]`
+- `quota_state.json` is created in the project folder
+
+Verify the state file was written:
+```powershell
+Get-Content quota_state.json
+```
+
+---
+
+#### Test 3 — Force an EXCEEDED state
+
+**Step 1** — Inject a pre-filled state with YouTube already over its 500 MB limit:
+
+```powershell
+$today = Get-Date -Format "yyyy-MM-dd"
+Set-Content quota_state.json "{`"date`":`"$today`",`"usage_bytes`":{`"YouTube`":524288000,`"TikTok`":0,`"Facebook`":0}}" -Encoding utf8
+```
+
+**Step 2** — Run the engine:
+
+```powershell
+.\dpi_engine.exe test_dpi.pcap output.pcap --quota-rules quota_rules.json
+```
+
+**Expected:**
+- YouTube shows `[EXCEEDED]` in the quota report
+- `Dropped: 1` in the Processing Report (the YouTube packet is blocked)
+- `Forwarded: 76` instead of 77
+
+---
+
+#### Test 4 — Verify persistence across runs
+
+```powershell
+# Clean state
+Remove-Item quota_state.json -ErrorAction SilentlyContinue
+
+# Run 1 — usage recorded
+.\dpi_engine.exe test_dpi.pcap output.pcap --quota-rules quota_rules.json
+
+# Run 2 — usage accumulates (NOT reset between runs on the same day)
+.\dpi_engine.exe test_dpi.pcap output.pcap --quota-rules quota_rules.json
+
+# Check that bytes doubled
+Get-Content quota_state.json
+```
+
+**Expected:** `usage_bytes` values are roughly double after the second run.
+
+---
+
+#### Test 5 — Daily reset
+
+Edit `quota_state.json` and change the date to yesterday:
+
+```powershell
+Set-Content quota_state.json '{"date":"2000-01-01","usage_bytes":{"YouTube":524288000,"TikTok":0,"Facebook":0}}' -Encoding utf8
+```
+
+Then run:
+
+```powershell
+.\dpi_engine.exe test_dpi.pcap output.pcap --quota-rules quota_rules.json
+```
+
+**Expected:** Engine prints `[QuotaManager] New day — resetting quota counters.` and all usage starts from 0.
+
+---
+
+#### Cleanup
+
+```powershell
+Remove-Item quota_state.json -ErrorAction SilentlyContinue
+```
+
+---
+
+## 13. Extending the Project
 
 ### Ideas for Improvement
 
