@@ -1,0 +1,7 @@
+{
+  "quotas": [
+    { "app": "YouTube",  "limit_mb": 500 },
+    { "app": "TikTok",   "limit_mb": 100 },
+    { "app": "Facebook", "limit_mb": 200 }
+  ]
+}
